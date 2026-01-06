@@ -1,0 +1,121 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Install and Harden Ubuntu Budgie 25.04 with X11",
+        "description": "Install Ubuntu Budgie 25.04, configure X11 session, update system, and apply security hardening per FR1",
+        "details": "Download Ubuntu Budgie 25.04 ISO, create bootable USB, install with X11 desktop (not Wayland), run `sudo apt update && sudo apt upgrade -y`, install essential packages: `sudo apt install ubuntu-budgie-desktop curl wget git vim htop`, set up user with sudo, configure automatic updates via `unattended-upgrades`, reboot and verify X11 with `echo $XDG_SESSION_TYPE`",
+        "testStrategy": "Verify `lsb_release -a` shows Ubuntu 25.04 Budgie, `echo $XDG_SESSION_TYPE` returns 'x11', system fully updated, no critical security warnings from `apt list --upgradable`",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Install NVIDIA Drivers 550+ and CUDA Toolkit",
+        "description": "Install NVIDIA RTX 3060 drivers version 550+, CUDA toolkit, and verify GPU functionality per FR1",
+        "details": "Add NVIDIA repo: `wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2504/x86_64/cuda-keyring_1.1-1_all.deb && sudo dpkg -i cuda-keyring_1.1-1_all.deb`, then `sudo apt update && sudo apt install cuda-drivers-550 nvidia-cuda-toolkit`, reboot, verify with `nvidia-smi` (should show RTX 3060 12GB), test CUDA with `nvcc --version`",
+        "testStrategy": "`nvidia-smi` shows RTX 3060 with driver 550+, `nvidia-smi -q` confirms 12GB VRAM, CUDA sample compilation succeeds: `cuda-samples` build and run",
+        "priority": "high",
+        "dependencies": [1],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Install Docker Engine, Compose, and NVIDIA Container Toolkit",
+        "description": "Deploy Docker platform with GPU support and auto-start capabilities per FR2",
+        "details": "Install Docker: `curl -fsSL https://get.docker.com | sudo sh`, add user to docker group: `sudo usermod -aG docker $USER`, install Compose: `sudo apt install docker-compose-plugin`, install nvidia-container-toolkit: `curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`, add repo and `sudo apt install nvidia-container-toolkit`, configure daemon.json with runtimes nvidia, restart docker, test GPU container: `docker run --rm --gpus all nvidia/cuda:12.0-base-ubuntu22.04 nvidia-smi`",
+        "testStrategy": "`docker --version`, `docker compose version`, GPU container test shows RTX 3060 in `nvidia-smi`, `docker run --gpus all` succeeds without errors",
+        "priority": "high",
+        "dependencies": [2],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Configure Static IP, Hostname, and Network Identity",
+        "description": "Set up stable network identity with static IP and persistent hostname per FR1 and FR6",
+        "details": "Edit `/etc/netplan/01-netcfg.yaml` for static IP (e.g., 192.168.1.100), `sudo netplan apply`, set hostname: `sudo hostnamectl set-hostname nuC9-agent-node`, edit `/etc/hosts` with IP hostname mapping, verify `hostname -I` and `ping nuC9-agent-node` resolves locally",
+        "testStrategy": "`hostname -I` shows static IP, `hostname` returns 'nuC9-agent-node', local ping resolves, survives reboot",
+        "priority": "high",
+        "dependencies": [1],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Configure UFW Firewall with Service Ports",
+        "description": "Implement security firewall allowing only required ports per FR7",
+        "details": "`sudo apt install ufw`, `sudo ufw default deny incoming`, `sudo ufw default allow outgoing`, `sudo ufw allow 22/tcp` (SSH), `sudo ufw allow 80/tcp`, `sudo ufw allow 443/tcp`, `sudo ufw allow 7000/tcp` (SmythOS Runtime), `sudo ufw allow 8080/tcp` (Studio), `sudo ufw allow 11434/tcp` (Ollama), `sudo ufw --force enable`, verify `sudo ufw status verbose`",
+        "testStrategy": "`ufw status` shows only allowed ports open, `nmap localhost` confirms ports 22,80,443,7000,8080,11434 accessible, all others filtered",
+        "priority": "medium",
+        "dependencies": [4],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Deploy Ollama with GPU Acceleration",
+        "description": "Install and configure Ollama server with RTX 3060 acceleration and OpenAI-compatible API per FR3",
+        "details": "Create `docker-compose.ollama.yml`: service ollama with image `ollama/ollama:latest`, `--gpus all`, ports `11434:11434`, volumes `/var/lib/ollama:/root/.ollama`, restart: always, deploy `docker compose -f docker-compose.ollama.yml up -d`, pull models `ollama pull llama3.2`, test GPU",
+        "testStrategy": "Ollama responds to API calls within 2s, `nvidia-smi` shows GPU utilization >0% during inference, OpenAI-compatible endpoint works: `curl http://localhost:11434/v1/models` lists models",
+        "priority": "high",
+        "dependencies": [3],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Deploy SmythOS Runtime Local and Studio OSS",
+        "description": "Containerize SmythOS Runtime (port 7000) and Studio (port 8080) with persistent storage per FR4",
+        "details": "Create `docker-compose.smythos.yml` with services: smythos-runtime (image: smythos/runtime-local:latest, ports: 7000:7000), smythos-studio (image: smythos/studio-oss:latest, ports: 8080:8080), environment vars for Ollama URL and VPS Qdrant/Neo4j endpoints, `docker compose -f docker-compose.smythos.yml up -d`, verify services healthy",
+        "testStrategy": "Access http://localhost:7000 (Runtime API responds), http://localhost:8080 (Studio UI loads), agent creation persists after restart, logs show connection to Ollama and VPS memory",
+        "priority": "high",
+        "dependencies": [6],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Deploy Caddy Reverse Proxy with Automatic TLS",
+        "description": "Configure Caddy for TLS termination, path-based routing, and compression per FR5",
+        "details": "Install Caddy: `sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https`, add Caddy repo, `sudo apt install caddy`, create Caddyfile, systemd enable `sudo systemctl enable --now caddy`, verify `curl -k https://nuC9-agent-node/ollama/api/tags`",
+        "testStrategy": "HTTPS access works: `curl https://nuC9-agent-node/studio` loads UI, `curl https://nuC9-agent-node/runtime` API responds, TLS cert valid (`openssl s_client`), response compressed",
+        "priority": "high",
+        "dependencies": [7],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Configure Tailscale VPN Across All Devices",
+        "description": "Deploy Tailscale mesh VPN connecting NUC9 desktop and both laptops per FR6",
+        "details": "On NUC9: `curl -fsSL https://tailscale.com/install.sh | sh`, `sudo tailscale up --authkey=<key> --advertise-exit-node`, verify `tailscale status`, on laptops: same install + `sudo tailscale up`, test `ping nuC9-agent-node` from laptops via Tailscale IP, configure Tailscale DNS for hostname resolution",
+        "testStrategy": "`tailscale status` shows all 3 devices online, `ping nuC9-agent-node` resolves from laptops, `curl https://nuC9-agent-node:443/studio` works from laptop VPN (<2s response)",
+        "priority": "high",
+        "dependencies": [8],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Configure Service Persistence, Auto-Start, and End-to-End Validation",
+        "description": "Ensure all services survive reboots and validate complete workflow per success metrics",
+        "details": "Create master `docker-compose.yml` including all services (ollama, smythos, exit-node tailscale), set restart: unless-stopped, create systemd service for master compose: `/etc/systemd/system/agent-node.service`, `systemctl enable --now agent-node`, reboot test, create runbook.md with all commands, validate: GPU inference + agent creation + VPS memory query from laptop",
+        "testStrategy": "Reboot NUC9, verify all services up within 5min (`docker ps`, `systemctl status agent-node`), laptop access all endpoints <2s, SmythOS agent successfully queries VPS Qdrant/Neo4j, GPU utilization during inference",
+        "priority": "medium",
+        "dependencies": [9],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2026-01-06T03:28:18.951Z",
+      "updated": "2026-01-06T03:28:18.951Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
