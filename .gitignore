@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+.idea/
+.vscode/
+dist/
+build/
+__pycache__/
+*.pem
+*.key
+secrets/
+.taskmaster/state.json
+.taskmaster/reports/
+tasks/
